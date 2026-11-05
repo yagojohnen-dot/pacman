@@ -3,75 +3,123 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Pac-Man JavaScript</title>
+    <title>Pac-Man Original Arcade</title>
     <style>
+        * {
+            box-sizing: border-box;
+            user-select: none;
+        }
         body {
-            background-color: #111;
+            background-color: #000;
             color: #fff;
-            font-family: Arial, sans-serif;
+            font-family: 'Courier New', Courier, monospace;
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
             min-height: 100vh;
             margin: 0;
+            overflow: hidden;
         }
-
-        h1 {
-            margin-bottom: 10px;
+        #game-container {
+            text-align: center;
+            position: relative;
         }
-
-        #score-board {
+        #ui-header {
+            display: flex;
+            justify-content: space-between;
+            width: 448px;
             font-size: 20px;
-            margin-bottom: 15px;
+            font-weight: bold;
+            margin-bottom: 8px;
         }
-
         canvas {
-            border: 4px solid blue;
-            box-shadow: 0 0 20px rgba(0, 0, 255, 0.5);
+            border: 4px solid #1919a6;
+            box-shadow: 0 0 15px rgba(25, 25, 166, 0.8);
             background-color: #000;
+            display: block;
+        }
+        #mobile-controls {
+            margin-top: 15px;
+            display: grid;
+            grid-template-columns: repeat(3, 60px);
+            grid-template-rows: repeat(2, 50px);
+            gap: 8px;
+            justify-content: center;
+        }
+        .btn {
+            background: #222;
+            border: 2px solid #555;
+            color: white;
+            font-size: 20px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+        }
+        .btn:active {
+            background: #444;
         }
     </style>
 </head>
 <body>
 
-    <h1>Pac-Man</h1>
-    <div id="score-board">Pontuação: <span id="score">0</span></div>
-    <canvas id="canvas" width="448" height="496"></canvas>
+    <div id="game-container">
+        <div id="ui-header">
+            <div>SCORE: <span id="score">0</span></div>
+            <div>LIVES: <span id="lives">3</span></div>
+        </div>
+        <canvas id="canvas" width="448" height="496"></canvas>
+
+        <div id="mobile-controls">
+            <div></div>
+            <div class="btn" onclick="setDir(0, -1)">▲</div>
+            <div></div>
+            <div class="btn" onclick="setDir(-1, 0)">◄</div>
+            <div class="btn" onclick="setDir(0, 1)">▼</div>
+            <div class="btn" onclick="setDir(1, 0)">►</div>
+        </div>
+    </div>
 
     <script>
         const canvas = document.getElementById('canvas');
         const ctx = canvas.getContext('2d');
         const scoreEl = document.getElementById('score');
+        const livesEl = document.getElementById('lives');
 
-        const tileSize = 16;
+        const TILE_SIZE = 16;
         let score = 0;
+        let lives = 3;
+        let gameOver = false;
+        let frightenTimer = 0;
 
-        // Mapa do jogo
-        const map = [
+        // 1: Parede, 2: Bolinha, 3: Saída do fantasma, 4: Super Bolinha, 0: Vazio
+        const rawMap = [
             [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
             [1,2,2,2,2,2,2,2,2,2,2,2,2,1,1,2,2,2,2,2,2,2,2,2,2,2,2,1],
             [1,2,1,1,1,1,2,1,1,1,1,1,2,1,1,2,1,1,1,1,1,2,1,1,1,1,2,1],
-            [1,3,1,0,0,1,2,1,0,0,0,1,2,1,1,2,1,0,0,0,1,2,1,0,0,1,3,1],
+            [1,4,1,1,1,1,2,1,1,1,1,1,2,1,1,2,1,1,1,1,1,2,1,1,1,1,4,1],
             [1,2,1,1,1,1,2,1,1,1,1,1,2,1,1,2,1,1,1,1,1,2,1,1,1,1,2,1],
             [1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1],
             [1,2,1,1,1,1,2,1,1,2,1,1,1,1,1,1,1,1,2,1,1,2,1,1,1,1,2,1],
             [1,2,1,1,1,1,2,1,1,2,1,1,1,1,1,1,1,1,2,1,1,2,1,1,1,1,2,1],
             [1,2,2,2,2,2,2,1,1,2,2,2,2,1,1,2,2,2,2,1,1,2,2,2,2,2,2,1],
             [1,1,1,1,1,1,2,1,1,1,1,1,0,1,1,0,1,1,1,1,1,2,1,1,1,1,1,1],
-            [0,0,0,0,0,1,2,1,1,1,1,1,0,1,1,0,1,1,1,1,1,2,1,0,0,0,0,0],
-            [0,0,0,0,0,1,2,1,1,0,0,0,0,0,0,0,0,0,0,1,1,2,1,0,0,0,0,0],
-            [0,0,0,0,0,1,2,1,1,0,1,1,1,0,0,1,1,1,0,1,1,2,1,0,0,0,0,0],
+            [1,1,1,1,1,1,2,1,1,1,1,1,0,1,1,0,1,1,1,1,1,2,1,1,1,1,1,1],
+            [1,1,1,1,1,1,2,1,1,0,0,0,0,0,0,0,0,0,0,1,1,2,1,1,1,1,1,1],
+            [1,1,1,1,1,1,2,1,1,0,1,1,1,3,3,1,1,1,0,1,1,2,1,1,1,1,1,1],
             [1,1,1,1,1,1,2,1,1,0,1,0,0,0,0,0,0,1,0,1,1,2,1,1,1,1,1,1],
             [0,0,0,0,0,0,2,0,0,0,1,0,0,0,0,0,0,1,0,0,0,2,0,0,0,0,0,0],
             [1,1,1,1,1,1,2,1,1,0,1,0,0,0,0,0,0,1,0,1,1,2,1,1,1,1,1,1],
-            [0,0,0,0,0,1,2,1,1,0,1,1,1,1,1,1,1,1,0,1,1,2,1,0,0,0,0,0],
-            [0,0,0,0,0,1,2,1,1,0,0,0,0,0,0,0,0,0,0,1,1,2,1,0,0,0,0,0],
-            [0,0,0,0,0,1,2,1,1,0,1,1,1,1,1,1,1,1,0,1,1,2,1,0,0,0,0,0],
+            [1,1,1,1,1,1,2,1,1,0,1,1,1,1,1,1,1,1,0,1,1,2,1,1,1,1,1,1],
+            [1,1,1,1,1,1,2,1,1,0,0,0,0,0,0,0,0,0,0,1,1,2,1,1,1,1,1,1],
+            [1,1,1,1,1,1,2,1,1,0,1,1,1,1,1,1,1,1,0,1,1,2,1,1,1,1,1,1],
             [1,1,1,1,1,1,2,1,1,0,1,1,1,1,1,1,1,1,0,1,1,2,1,1,1,1,1,1],
             [1,2,2,2,2,2,2,2,2,2,2,2,2,1,1,2,2,2,2,2,2,2,2,2,2,2,2,1],
             [1,2,1,1,1,1,2,1,1,1,1,1,2,1,1,2,1,1,1,1,1,2,1,1,1,1,2,1],
-            [1,3,2,2,1,1,2,2,2,2,2,2,2,0,0,2,2,2,2,2,2,2,1,1,2,2,3,1],
+            [1,2,1,1,1,1,2,1,1,1,1,1,2,1,1,2,1,1,1,1,1,2,1,1,1,1,2,1],
+            [1,4,2,2,1,1,2,2,2,2,2,2,2,0,0,2,2,2,2,2,2,2,1,1,2,2,4,1],
             [1,1,1,2,1,1,2,1,1,2,1,1,1,1,1,1,1,1,2,1,1,2,1,1,2,1,1,1],
             [1,1,1,2,1,1,2,1,1,2,1,1,1,1,1,1,1,1,2,1,1,2,1,1,2,1,1,1],
             [1,2,2,2,2,2,2,1,1,2,2,2,2,1,1,2,2,2,2,1,1,2,2,2,2,2,2,1],
@@ -80,83 +128,213 @@
             [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
         ];
 
-        // Pacman
+        let map = JSON.parse(JSON.stringify(rawMap));
+
         const pacman = {
-            x: 13.5 * tileSize,
-            y: 22 * tileSize,
+            x: 13.5 * TILE_SIZE,
+            y: 23 * TILE_SIZE,
             speed: 2,
             dirX: 0,
             dirY: 0,
             nextDirX: 0,
             nextDirY: 0,
-            radius: 6
+            radius: 7,
+            mouthAngle: 0.2,
+            mouthSpeed: 0.02
         };
 
-        // Escutar teclas pressionadas
+        class Ghost {
+            constructor(x, y, color) {
+                this.startX = x * TILE_SIZE;
+                this.startY = y * TILE_SIZE;
+                this.x = this.startX;
+                this.y = this.startY;
+                this.color = color;
+                this.speed = 1.5;
+                this.dirX = 0;
+                this.dirY = -1;
+            }
+
+            reset() {
+                this.x = this.startX;
+                this.y = this.startY;
+                this.dirX = 0;
+                this.dirY = -1;
+            }
+
+            move() {
+                // Movimento simples inteligente nas interseções
+                if (Number.isInteger(this.x / TILE_SIZE) && Number.isInteger(this.y / TILE_SIZE)) {
+                    const validDirs = [];
+                    const dirs = [{x:0, y:-1}, {x:0, y:1}, {x:-1, y:0}, {x:1, y:0}];
+                    
+                    dirs.forEach(d => {
+                        // Evita inverter direção 180° instantaneamente
+                        if (d.x !== -this.dirX || d.y !== -this.dirY) {
+                            const nextTileX = Math.floor(this.x / TILE_SIZE) + d.x;
+                            const nextTileY = Math.floor(this.y / TILE_SIZE) + d.y;
+                            if (map[nextTileY] && map[nextTileY][nextTileX] !== 1) {
+                                validDirs.push(d);
+                            }
+                        }
+                    });
+
+                    if (validDirs.length > 0) {
+                        const chosen = validDirs[Math.floor(Math.random() * validDirs.length)];
+                        this.dirX = chosen.x;
+                        this.dirY = chosen.y;
+                    } else {
+                        this.dirX *= -1;
+                        this.dirY *= -1;
+                    }
+                }
+
+                this.x += this.dirX * this.speed;
+                this.y += this.dirY * this.speed;
+
+                // Teletransporte nas bordas laterais
+                if (this.x < 0) this.x = canvas.width - TILE_SIZE;
+                if (this.x >= canvas.width) this.x = 0;
+            }
+
+            draw() {
+                ctx.fillStyle = frightenTimer > 0 ? (frightenTimer < 100 && Math.floor(frightenTimer / 10) % 2 === 0 ? '#fff' : '#0000ff') : this.color;
+                ctx.beginPath();
+                ctx.arc(this.x + 8, this.y + 6, 7, Math.PI, 0, false);
+                ctx.lineTo(this.x + 15, this.y + 16);
+                ctx.lineTo(this.x + 1, this.y + 16);
+                ctx.closePath();
+                ctx.fill();
+
+                // Olhos do Fantasma
+                ctx.fillStyle = '#fff';
+                ctx.beginPath();
+                ctx.arc(this.x + 5, this.y + 6, 2.5, 0, Math.PI * 2);
+                ctx.arc(this.x + 11, this.y + 6, 2.5, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.fillStyle = '#000';
+                ctx.beginPath();
+                ctx.arc(this.x + 5 + this.dirX, this.y + 6 + this.dirY, 1, 0, Math.PI * 2);
+                ctx.arc(this.x + 11 + this.dirX, this.y + 6 + this.dirY, 1, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        const ghosts = [
+            new Ghost(13, 11, '#ff0000'), // Blinky (Vermelho)
+            new Ghost(14, 11, '#ffb8ff'), // Pinky (Rosa)
+            new Ghost(13, 14, '#00ffff'), // Inky (Ciano)
+            new Ghost(14, 14, '#ffb852')  // Clyde (Laranja)
+        ];
+
+        function setDir(x, y) {
+            pacman.nextDirX = x;
+            pacman.nextDirY = y;
+        }
+
         window.addEventListener('keydown', (e) => {
             switch(e.key) {
-                case 'ArrowUp':
-                    pacman.nextDirX = 0; pacman.nextDirY = -1;
-                    break;
-                case 'ArrowDown':
-                    pacman.nextDirX = 0; pacman.nextDirY = 1;
-                    break;
-                case 'ArrowLeft':
-                    pacman.nextDirX = -1; pacman.nextDirY = 0;
-                    break;
-                case 'ArrowRight':
-                    pacman.nextDirX = 1; pacman.nextDirY = 0;
-                    break;
+                case 'ArrowUp': case 'w': case 'W': setDir(0, -1); break;
+                case 'ArrowDown': case 's': case 'S': setDir(0, 1); break;
+                case 'ArrowLeft': case 'a': case 'A': setDir(-1, 0); break;
+                case 'ArrowRight': case 'd': case 'D': setDir(1, 0); break;
             }
         });
 
-        function isColliding(x, y) {
-            const row = Math.floor(y / tileSize);
-            const col = Math.floor(x / tileSize);
-            return map[row] && map[row][col] === 1;
+        function canMove(entity, dirX, dirY) {
+            const nextX = entity.x + dirX * entity.speed;
+            const nextY = entity.y + dirY * entity.speed;
+            const r = entity.radius;
+
+            const checkCorners = [
+                {x: nextX - r, y: nextY - r},
+                {x: nextX + r, y: nextY - r},
+                {x: nextX - r, y: nextY + r},
+                {x: nextX + r, y: nextY + r}
+            ];
+
+            for (let pt of checkCorners) {
+                const col = Math.floor(pt.x / TILE_SIZE);
+                const row = Math.floor(pt.y / TILE_SIZE);
+                if (map[row] && map[row][col] === 1) return false;
+            }
+            return true;
         }
 
-        function canMove(dirX, dirY) {
-            const nextX = pacman.x + dirX * pacman.speed;
-            const nextY = pacman.y + dirY * pacman.speed;
-            const r = pacman.radius;
-
-            return !(
-                isColliding(nextX - r, nextY - r) ||
-                isColliding(nextX + r, nextY - r) ||
-                isColliding(nextX - r, nextY + r) ||
-                isColliding(nextX + r, nextY + r)
-            );
+        function resetPositions() {
+            pacman.x = 13.5 * TILE_SIZE;
+            pacman.y = 23 * TILE_SIZE;
+            pacman.dirX = 0;
+            pacman.dirY = 0;
+            pacman.nextDirX = 0;
+            pacman.nextDirY = 0;
+            ghosts.forEach(g => g.reset());
         }
 
         function update() {
-            // Alterar direção se possível
-            if (pacman.nextDirX !== 0 || pacman.nextDirY !== 0) {
-                if (canMove(pacman.nextDirX, pacman.nextDirY)) {
-                    pacman.dirX = pacman.nextDirX;
-                    pacman.dirY = pacman.nextDirY;
-                }
+            if (gameOver) return;
+
+            if (frightenTimer > 0) frightenTimer--;
+
+            // Trocar direção do Pacman
+            if ((pacman.nextDirX !== 0 || pacman.nextDirY !== 0) && canMove(pacman, pacman.nextDirX, pacman.nextDirY)) {
+                pacman.dirX = pacman.nextDirX;
+                pacman.dirY = pacman.nextDirY;
             }
 
             // Mover Pacman
-            if (canMove(pacman.dirX, pacman.dirY)) {
+            if (canMove(pacman, pacman.dirX, pacman.dirY)) {
                 pacman.x += pacman.dirX * pacman.speed;
                 pacman.y += pacman.dirY * pacman.speed;
+
+                // Animação da Boca
+                pacman.mouthAngle += pacman.mouthSpeed;
+                if (pacman.mouthAngle > 0.4 || pacman.mouthAngle < 0.05) {
+                    pacman.mouthSpeed = -pacman.mouthSpeed;
+                }
             }
 
-            // Comer pontos
-            const centerRow = Math.floor(pacman.y / tileSize);
-            const centerCol = Math.floor(pacman.x / tileSize);
+            // Teletransporte lateral Pacman
+            if (pacman.x < 0) pacman.x = canvas.width - TILE_SIZE;
+            if (pacman.x >= canvas.width) pacman.x = 0;
+
+            // Comer bolinhas
+            const centerCol = Math.floor((pacman.x) / TILE_SIZE);
+            const centerRow = Math.floor((pacman.y) / TILE_SIZE);
 
             if (map[centerRow] && map[centerRow][centerCol] === 2) {
                 map[centerRow][centerCol] = 0;
                 score += 10;
                 scoreEl.textContent = score;
-            } else if (map[centerRow] && map[centerRow][centerCol] === 3) {
+            } else if (map[centerRow] && map[centerRow][centerCol] === 4) {
                 map[centerRow][centerCol] = 0;
                 score += 50;
+                frightenTimer = 300;
                 scoreEl.textContent = score;
             }
+
+            // Mover Fantasmas e Checar Colisão
+            ghosts.forEach(ghost => {
+                ghost.move();
+
+                const dist = Math.hypot((pacman.x) - (ghost.x + 8), (pacman.y) - (ghost.y + 8));
+                if (dist < 12) {
+                    if (frightenTimer > 0) {
+                        ghost.reset();
+                        score += 200;
+                        scoreEl.textContent = score;
+                    } else {
+                        lives--;
+                        livesEl.textContent = lives;
+                        if (lives <= 0) {
+                            gameOver = true;
+                        } else {
+                            resetPositions();
+                        }
+                    }
+                }
+            });
         }
 
         function draw() {
@@ -166,27 +344,51 @@
             for (let r = 0; r < map.length; r++) {
                 for (let c = 0; c < map[r].length; c++) {
                     if (map[r][c] === 1) {
-                        ctx.fillStyle = 'blue';
-                        ctx.fillRect(c * tileSize, r * tileSize, tileSize, tileSize);
+                        ctx.fillStyle = '#1919a6';
+                        ctx.fillRect(c * TILE_SIZE, r * TILE_SIZE, TILE_SIZE, TILE_SIZE);
                     } else if (map[r][c] === 2) {
                         ctx.fillStyle = '#ffb8ae';
                         ctx.beginPath();
-                        ctx.arc(c * tileSize + tileSize/2, r * tileSize + tileSize/2, 2, 0, Math.PI * 2);
+                        ctx.arc(c * TILE_SIZE + 8, r * TILE_SIZE + 8, 2, 0, Math.PI * 2);
                         ctx.fill();
-                    } else if (map[r][c] === 3) {
+                    } else if (map[r][c] === 4) {
                         ctx.fillStyle = '#ffb8ae';
                         ctx.beginPath();
-                        ctx.arc(c * tileSize + tileSize/2, r * tileSize + tileSize/2, 5, 0, Math.PI * 2);
+                        ctx.arc(c * TILE_SIZE + 8, r * TILE_SIZE + 8, 5, 0, Math.PI * 2);
                         ctx.fill();
                     }
                 }
             }
 
-            // Desenhar Pacman
-            ctx.fillStyle = 'yellow';
+            // Desenhar Fantasmas
+            ghosts.forEach(g => g.draw());
+
+            // Desenhar Pacman com rotação da boca
+            ctx.fillStyle = '#ffff00';
             ctx.beginPath();
-            ctx.arc(pacman.x, pacman.y, pacman.radius, 0, Math.PI * 2);
+            let angle = 0;
+            if (pacman.dirX === 1) angle = 0;
+            if (pacman.dirX === -1) angle = Math.PI;
+            if (pacman.dirY === 1) angle = Math.PI / 2;
+            if (pacman.dirY === -1) angle = (3 * Math.PI) / 2;
+
+            ctx.arc(
+                pacman.x,
+                pacman.y,
+                pacman.radius,
+                angle + pacman.mouthAngle,
+                angle + Math.PI * 2 - pacman.mouthAngle
+            );
+            ctx.lineTo(pacman.x, pacman.y);
             ctx.fill();
+
+            // Mensagem de Game Over
+            if (gameOver) {
+                ctx.fillStyle = 'red';
+                ctx.font = '30px "Courier New"';
+                ctx.textAlign = 'center';
+                ctx.fillText("GAME OVER", canvas.width / 2, canvas.height / 2);
+            }
         }
 
         function gameLoop() {
